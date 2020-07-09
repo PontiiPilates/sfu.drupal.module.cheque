@@ -1,379 +1,102 @@
-    <?php
-
-    /**
-     * ! Это страница занесения успешной транзакции в базу и отправки на почту ссылки на чек.
-     * Страница начинается с адресной строки:
-     * ?orderId=525606fb-cae8-70b7-a1be-05710211d19b&lang=ru
-     */
-
-
-    echo '<pre>';
-    echo '<p><strong>Получаем параметры из адресной строки</strong></p>';
-    print_r($_SERVER['QUERY_STRING']);
-    echo '</pre>';
-    // $_SERVER['SCRIPT_NAME'] - путь до исполняемого файла.
-    // $_SERVER['REQUEST_URI'] - весь запрос от URL.
-    // $_SERVER['QUERY_STRING'] - параметры запроса.
-    
-
-    // !Получаем orderId.
-    $get_params = $_SERVER['QUERY_STRING'];
-    $get_params = explode('&', $get_params);
-    $get_params = explode('=', $get_params[0]);
-    $order_id = $get_params[1];
-
-    echo '<pre>';
-    echo '<p><strong>Получаем идентификатор ордера</strong></p>';
-    print_r($order_id);
-    echo '</pre>';
-
-
-    // !Формирование запроса проверки статуса.
-    $status_do = 'https://securepayments.sberbank.ru/payment/rest/getOrderStatusExtended.do';
-    $name = 'sfu-kras-api';
-    $password = 'sfuapi273076';
-    $get_status__request = "$status_do?userName=$name&password=$password&orderId=$order_id";
-
-    echo '<pre>';
-    echo '<p><strong>Отправляем запрос на проверку сведений об ордере с этим идентификатором</strong></p>';
-    print_r($get_status__request);
-    echo '</pre>';
-
-    // !Отправка запроса.
-    $aa = file_get_contents($get_status__request);
-
-    // !Расшифровка полученного ответа.
-    $aa = json_decode($aa, TRUE);
-
-    echo '<pre>';
-    echo '<p><strong>Принимаем ответ</strong></p>';
-    print_r($aa);
-    echo '</pre>';
-
-    // Получение статуса
-    $s = $aa['orderStatus'];
-    // Получение полей, которые пользователь внес в форму.
-    $p = $aa['merchantOrderParams'];
-    // А это то я просто прошелся по массиву значений.
-    // Но мне их нужно вносить в базу в более структурированном виде.
-    // Поэтому придется получать конкретные значения.
-    
-    
-    // Получаем ассоциативный массив переданных полей формы.
-    $n = array();
-    foreach ($p as $k => $v) {
-        $n[$v['name']] = $v['value'];
-    }
-    
-    echo '<pre>';
-    echo '<p><strong>Преобразуем данные из полей формы из многоуровневого массива в ассоциативный массив</strong></p>';
-    print_r($n);
-    echo '</pre>';
-
-
-    $description 	= $n['Описание'];
-    $libnumber 		= $n['Читательский билет'];
-    $personal 		= $n['personal'];
-    $package 		= $n['Количество проверок'];
-    $service 		= $aa['orderDescription'];
-    $surname 		= $n['Фамилия читателя'];
-    $address 		= $n['Адрес'];
-    $dogovor 		= $n['Договор'];
-    $hostel 		= $n['Общежитие'];
-    $status 		= $n['Статус'];
-    $payer 			= $n['Плательщик'];
-    $phone 			= $n['Телефон'];
-    $event 			= $n['Событие'];
-    $email 			= $n['Почта'];
-    $cost 			= $aa['paymentAmountInfo']['approvedAmount'] / 100;
-    $room 			= $n['Комната'];
-    $url 			= $n['URL'];
-    $fio 			= $n['ФИО'];
-    $org 			= $n['Организация'];
-    $order_number = $aa['orderNumber'];
-    $order_status = $aa['orderStatus'];
-
-
-    // echo '<pre>';
-    // print_r($n['Фамилия читателя']);
-    // echo '</pre>';
-
-    // !Генерация временного пароля
-    $all_simb = '0123456789qwertyuiopasdfghjklzxcvbnm';
-    $pass = str_shuffle($all_simb);
-    $pass = substr($pass, 0, 10);
-
-    echo '<pre>';
-    echo '<p><strong>Генерация пароля</strong></p>';
-    print_r($pass);
-    echo '</pre>';
-
-
-
-   
-
-
-    // Заносим информацию в базу данных
-    $link = mysqli_connect("localhost", "graduation", "eex3ge3J", "db_graduation");
-    // !Устанавливаем кодировку.
-    $link->set_charset("utf8");
-
- 
-    $query = "INSERT INTO `transaction`
-    -- (
-    --     `id`,
-    --     `description`,
-    --     `libnumber`,
-    --     `personal`,
-    --     `package`,
-    --     `service`,
-    --     `surname`,
-    --     `address`,
-    --     `dogovor`,
-    --     `hostel`,
-    --     `status`,
-    --     `payer`,
-    --     `phone`,
-    --     `event`,
-    --     `email`,
-    --     `cost`,
-    --     `room`,
-    --     `url`,
-    --     `fio`,
-    --     `org`,
-    --     `datetime`
-    -- )
-    VALUES (
-        NULL,
-        '$description',
-        '$libnumber',
-        '$personal',
-        '$package',
-        '$service',
-        '$surname',
-        '$address',
-        '$dogovor',
-        '$hostel',
-        '$status',
-        '$payer',
-        '$phone',
-        '$event',
-        '$email',
-        '$cost',
-        '$room',
-        '$url',
-        '$fio',
-        '$org',
-        '$order_id',
-        '$pass',
-        '$order_number',
-        '$order_status',
-        CURRENT_TIMESTAMP
-    )";
-    $res = mysqli_query($link, $query);
-    echo '<p><strong>Получаем идентификатор занесения в базу данных</strong></p>';
-    if ($res) {
-        print('Запрос удался');
-    } else {
-        print('Неудача');
-    }
-    // Проверки подключения.
-    // if (!$link) {
-    //     echo "Ошибка: Невозможно установить соединение с MySQL." . PHP_EOL;
-    //     echo "Код ошибки errno: " . mysqli_connect_errno() . PHP_EOL;
-    //     echo "Текст ошибки error: " . mysqli_connect_error() . PHP_EOL;
-    //     exit;
-    // }
-    // echo "Соединение с MySQL установлено!" . PHP_EOL;
-    // echo "Информация о сервере: " . mysqli_get_host_info($link) . PHP_EOL;
-    //mysqli_close($link);
-
-
-    // !Вывод информации из базы данных.
-
-    $q = "SELECT * FROM transaction WHERE id = 90";
-    $r = mysqli_query($link, $q);
-    $b = mysqli_fetch_assoc($r);
-
-    // if ($r) {
-    //     print('Запрос удался');
-    // } else {
-    //     print('Неудача');
-    // }
-
-    echo '<pre>';
-    echo '<p><strong>Вывод данных</strong></p>';
-    print_r($b);
-    echo '</pre>';
-
-    // !Отправляем информацию на почту в виде чека
-    // $message['subject'] = "Платёж #$pay->pay_id за услуги СФУ получен";
-    // $message['body'] = "Получено потверждение от банка об успешном платеже за услуги СФУ ($service[title]) на сумму ${cost}\nИнформация о платеже на сайте СФУ по адресу:\n${link}\n\n---\nУведомление отправлено автоматически сервисом pay.sfu-kras.ru";
-    $id = $b['id'];
-
-    mail("sleshukov@sfu-kras.ru", "Загаловок", "https://pay.sfu-kras.ru/cheque?id=$order_id&pass=$pass");
-    
-
-    // !Остановка.
-    // TODO Теперь осталось сверить пароль и если он совпадает с указанным в базе то, вывести данные о транзакции в виде чека.
-    // ? Как важно прописывать логику в виде слов.
-
-    /**
-     * ! Это страница проверки чека.
-     * С этого момента начинается другая страница
-     * ?orderId=525606fb-cae8-70b7-a1be-05710211d19b&password=5no9j0kgdp
-     */
-
-    $order_id = $_GET['orderId'];
-    $password = $_GET['password'];
-
-    $z = "SELECT * FROM `transaction` WHERE `order_id` = '$order_id' AND `password` = '$password'";
-    $o = mysqli_query($link, $z);
-    $t = mysqli_fetch_assoc($o);
-
-    if ($t) {
-        print('Ok');
-    } else {
-        print('No');
-    }
-
-
-    echo '<pre>';
-    echo '<p><strong>Вывод данных по запросу из адресной строки</strong></p>';
-    print_r($t);
-    echo '</pre>';
-
-
-
-
-
-
-
-
-
-
-
-
-    // !СЦЕНАРИЙ:
-
-    // // !Прочитать URL.
-    // // !Взять идентификатор.
-    // // !С его помощью сформировать запрос на получение статуса.
-    // // !Отправить запрос.
-    // // !Получить страницу ответа.
-    // // !Прочитать страницу ответа.
-    // // !Получить информацию из json о данных пользователя.
-    // // Подготовить информацию для занесения в базу данных.
-    // // Организовать занесение информации в базу данных.
-    // // !Прочитать информацию из базы данных.
-    // // !Вывести ее на страницу.
-    // // !Отправить ее на почту.
-    // // !Сообщить о статусе платежа и о том, что информация на почту отправлена.
-    
-
-
-
-
-
-    // Запрос register.do
-    /*https://3dsec.sberbank.ru/payment/rest/register.do
-    ?userName=sfu-kras-api
-    &password=sfu-kras
-    &amount=100
-    &orderNumber=24
-    &returnUrl=https://4pda.ru/2020/07/02/372817/
-    &failUrl=https://4pda.ru/2020/07/01/372798/
-    &jsonParams={"name":"Фёдор","tel":"+79233349999","dogovor":"18/45/15"}*/
-
-    // Ответ
-    /*{"orderId":"b43ab099-cbd9-7216-8270-d0af5e369d04","formUrl":"https://3dsec.sberbank.ru/payment/merchants/sbersafe/payment_ru.html?mdOrder=b43ab099-cbd9-7216-8270-d0af5e369d04"}*/
-
-    // Перенаправление после успеха
-    /*https://4pda.ru/2020/07/02/372817/?orderId=b43ab099-cbd9-7216-8270-d0af5e369d04&lang=ru*/
-
-
-
-
-
-    // Зпрос getOrderStatusExtended.do
-    /*https://3dsec.sberbank.ru/payment/rest/getOrderStatusExtended.do
-    ?userName=sfu-kras-api
-    &password=sfu-kras
-    &orderId=b43ab099-cbd9-7216-8270-d0af5e369d04*/
-
-    // Ответ
-    /*{
-        "errorCode":"0",
-        "errorMessage":"Успешно",
-        "orderNumber":"24",
-        "orderStatus":2,
-        "actionCode":0,
-        "actionCodeDescription":"",
-        "amount":100,
-        "currency":"643",
-        "date":1593657687324,
-        "orderDescription":"",
-        "ip":"193.218.138.83",
-        "merchantOrderParams":[
-            {
-                "name":"name",
-                "value":"Фёдор"
-            },
-            {
-                "name":"tel",
-                "value":" 79233349999"
-            },
-            {
-                "name":"dogovor",
-                "value":"18/45/15"
-            }
-        ],
-        "transactionAttributes":[],
-        "attributes":[
-            {
-                "name":"mdOrder",
-                "value":"b43ab099-cbd9-7216-8270-d0af5e369d04"
-            }
-        ],
-        "cardAuthInfo":{
-            "maskedPan":"411111**1111",
-            "expiration":"202412",
-            "cardholderName":"CARDHOLDER NAME",
-            "approvalCode":"123456",
-            "pan":"411111**1111"
-        },
-        "authDateTime":1593657918094,
-        "terminalId":"123456",
-        "authRefNum":"987438167428",
-        "paymentAmountInfo":{
-            "paymentState":"DEPOSITED",
-            "approvedAmount":100,
-            "depositedAmount":100,
-            "refundedAmount":0
-        },
-        "bankInfo":{
-            "bankName":"TEST CARD",
-            "bankCountryCode":"RU",
-            "bankCountryName":"Россия"
-        }
-    }*/
-
-    // Коды orderStatus
-    // 0 - заказ зарегистрирован, но не оплачен;
-    // 1 - предавторизованная сумма удержана (для двухстадийных платежей);
-    // 2 - проведена полная авторизация суммы заказа;
-    // 3 - авторизация отменена;
-    // 4 - по транзакции была проведена операция возврата;
-    // 5 - инициирована авторизация через сервер контроля доступа банка-эмитента;
-    // 6 - авторизация отклонена.
-
-    // Коды ошибок
-    // 0	Обработка запроса прошла без системных ошибок.
-    // 5 - Доступ запрещён.
-    // 5 - Пользователь должен сменить свой пароль.
-    // 5 - [orderId] не задан.
-    // 6 - Незарегистрированный orderId.
-    // 7 - Системная ошибка.
-
-
-
+<?php
+
+// ! Cтраница: внесение успешной транзакции в базу данных и отправки на почту ссылки на чек.
+// ?orderId=525606fb-cae8-70b7-a1be-05710211d19b&lang=ru
+
+// Имя пользователя Api.
+$user_name = 'sfu-kras-api';
+// Пароль пользователя Api.
+$password = 'sfuapi273076';
+// Идентификатор транзакции из параметров запроса.
+$order_id = $_GET['orderId'];
+// Запрос на получение статуса транзакции.
+$url_status_transaction = "https://securepayments.sberbank.ru/payment/rest/getOrderStatusExtended.do?userName=$user_name&password=$password&orderId=$order_id";
+// Отправка запроса.
+$get_transaction_info = file_get_contents($url_status_transaction);
+// Преобразование json в ассоциативный массив.
+$get_transaction_info = json_decode($get_transaction_info, TRUE);
+// Статус транзакции.
+$get_status = $get_transaction_info['orderStatus'];
+// Поля формы.
+$get_fields = $get_transaction_info['merchantOrderParams'];
+// Преобразование имен и значений переданных полей формы в ассоциативный массив.
+$fields = array();
+foreach ($get_fields as $key => $value) {
+    $fields[$value['name']] = $value['value'];
+}
+// Значения для занесения в базу данных.
+$description    = $fields['Описание'];
+$libnumber      = $fields['Читательский билет'];
+$personal       = $fields['personal'];
+$package        = $fields['Количество проверок'];
+$surname        = $fields['Фамилия читателя'];
+$address        = $fields['Адрес'];
+$dogovor        = $fields['Договор'];
+$hostel         = $fields['Общежитие'];
+$status         = $fields['Статус'];
+$payer          = $fields['Плательщик'];
+$phone          = $fields['Телефон'];
+$event          = $fields['Событие'];
+$email          = $fields['Почта'];
+$room           = $fields['Комната'];
+$url            = $fields['URL'];
+$fio            = $fields['ФИО'];
+$org            = $fields['Организация'];
+$order_number   = $get_transaction_info['orderNumber'];
+$order_status   = $get_transaction_info['orderStatus'];
+$service        = $get_transaction_info['orderDescription'];
+$cost           = $get_transaction_info['paymentAmountInfo']['approvedAmount'] / 100;
+// Генерация пароля для доступа к чеку.
+$hash = '0123456789qwertyuiopasdfghjklzxcvbnm';
+$password = str_shuffle($hash);
+$password = substr($password, 0, 10);
+// Подключение к базе данных.
+$connect = mysqli_connect("localhost", "graduation", "eex3ge3J", "db_graduation");
+// Установка кодировки.
+$connect -> set_charset("utf8");
+// Запрос к базе данных.
+$sql = "INSERT INTO `transaction` VALUES (NULL, '$description', '$libnumber', '$personal', '$package', '$service', '$surname', '$address', '$dogovor', '$hostel', '$status', '$payer', '$phone', '$event', '$email', '$cost', '$room', '$url', '$fio', '$org', '$order_id', '$password', '$order_number', '$order_status', CURRENT_TIMESTAMP)";
+// Реализация запроса.
+$res = mysqli_query($connect, $sql);
+// Отправка ссылки на чек.
+mail("sleshukov@sfu-kras.ru", "Загаловок", "https://pay.sfu-kras.ru/cheque?orderNumber=$order_number&password=$password");
+
+// ! Cтраница проверки чека.
+// ?orderNumber=1594018660&password=e8j9ydosbh
+// Таймшамп, присвоенный транзакции.
+$order_number = $_GET['orderNumber'];
+// Пароль, писвоенный транзакции.
+$password = $_GET['password'];
+// Запрос в базу данных.
+$sql = "SELECT * FROM `transaction` WHERE `order_number` = '$order_number' AND `password` = '$password'";
+// Реализация запроса.
+$res = mysqli_query($connect, $sql);
+// Преобразование в ассоциативный массив.
+$res = mysqli_fetch_assoc($res);
+
+// ! Для отладки.
+echo '<pre>';
+print_r($res);
+echo '</pre>';
+
+// ! Коды orderStatus
+// 0 - заказ зарегистрирован, но не оплачен;
+// 1 - предавторизованная сумма удержана (для двухстадийных платежей);
+// 2 - проведена полная авторизация суммы заказа;
+// 3 - авторизация отменена;
+// 4 - по транзакции была проведена операция возврата;
+// 5 - инициирована авторизация через сервер контроля доступа банка-эмитента;
+// 6 - авторизация отклонена.
+
+// ! Коды ошибок
+// 0	Обработка запроса прошла без системных ошибок.
+// 5 - Доступ запрещён.
+// 5 - Пользователь должен сменить свой пароль.
+// 5 - [orderId] не задан.
+// 6 - Незарегистрированный orderId.
+// 7 - Системная ошибка.
+
+// ! Было полезно:
+// $_SERVER - Содержит данные о конфигурации сервера и конфигурации клиента.
+// str_shuffle() - Перемешивает символы в передаваемой строке случайным образом.
+// substr() - Обрезает строку.
