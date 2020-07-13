@@ -1,0 +1,170 @@
+<?php
+
+/**
+ * Implement hook_init().
+ */
+function sfu_pay_sber_init()
+{
+	drupal_add_js(drupal_get_path('module', 'sfu_pay_sber') . '/sfu_pay_sber.js');
+}
+
+/**
+ * Implement hook_menu().
+ */
+function sfu_pay_sber_menu()
+{
+	$items['transaction-success'] = array(
+		'title' => 'Оплата успешно завершена',
+		'page callback' => '_transaction_success',
+		'access arguments' => array('access content'),
+		'type' => MENU_CALLBACK
+	);
+	$items['transaction-failure'] = array(
+		'title' => 'Не удалось произвести оплату',
+		'page callback' => '_transaction_failure',
+		'access arguments' => array('access content'),
+		'type' => MENU_CALLBACK
+	);
+	return $items;
+}
+
+function _transaction_success()
+{
+	// !Внесение успешной транзакции в базу данных.
+	// !Отправка ссылки на почту.
+	// ?Тестовые параметры: ?orderId=525606fb-cae8-70b7-a1be-05710211d19b&lang=ru
+	// Имя пользователя Api.
+	$user_name = 'sfu-kras-api';
+	// Пароль пользователя Api.
+	$password = 'sfuapi273076';
+	// Идентификатор транзакции из параметров запроса.
+	$order_id = $_GET['orderId'];
+	// Запрос на получение статуса транзакции.
+	$url_status_transaction = "https://securepayments.sberbank.ru/payment/rest/getOrderStatusExtended.do?userName=$user_name&password=$password&orderId=$order_id";
+	// Отправка запроса.
+	$get_transaction_info = file_get_contents($url_status_transaction);
+	// Преобразование json в ассоциативный массив.
+	$get_transaction_info = json_decode($get_transaction_info, TRUE);
+	// Статус транзакции.
+	$get_status = $get_transaction_info['orderStatus'];
+	// Поля формы.
+	$get_fields = $get_transaction_info['merchantOrderParams'];
+	// Преобразование имен и значений переданных полей формы в ассоциативный массив.
+	$fields = array();
+	foreach ($get_fields as $key => $value) {
+		$fields[$value['name']] = $value['value'];
+	}
+	// Значения для занесения в базу данных.
+	$description    = $fields['Описание'];
+	$libnumber      = $fields['Читательский билет'];
+	$personal       = $fields['personal'];
+	$package        = $fields['Количество проверок'];
+	$surname        = $fields['Фамилия читателя'];
+	$address        = $fields['Адрес'];
+	$dogovor        = $fields['Договор'];
+	$hostel         = $fields['Общежитие'];
+	$status         = $fields['Статус'];
+	$payer          = $fields['Плательщик'];
+	$phone          = $fields['Телефон'];
+	$event          = $fields['Событие'];
+	$email          = $fields['Почта'];
+	$room           = $fields['Комната'];
+	$url            = $fields['URL'];
+	$fio            = $fields['ФИО'];
+	$org            = $fields['Организация'];
+	$order_number   = $get_transaction_info['orderNumber'];
+	$order_status   = $get_transaction_info['orderStatus'];
+	$service        = $get_transaction_info['orderDescription'];
+	$cost           = $get_transaction_info['paymentAmountInfo']['approvedAmount'] / 100;
+	// Подключение к базе данных.
+	$connect = mysqli_connect("localhost", "root", "", "db_pay");
+	// Установка кодировки.
+	$connect->set_charset("utf8");
+	// Проверка наличия ордера в базе данных.
+	$sql = "SELECT * FROM `transaction` WHERE `order_id` = '$order_id'";
+	$res = mysqli_query($connect, $sql);
+	$res = mysqli_num_rows($res);
+	// Если транзакции с текущим orderId не существует, то заносим ее в базу данных.
+	if ($res == 0) {
+		// Генерация пароля для доступа к чеку.
+		$hash = '0123456789qwertyuiopasdfghjklzxcvbnm';
+		$password = str_shuffle($hash);
+		$password = substr($password, 0, 10);
+		// Внесение информации в базу данных.
+		$sql = "INSERT INTO `transaction` VALUES (NULL, '$description', '$libnumber', '$personal', '$package', '$service', '$surname', '$address', '$dogovor', '$hostel', '$status', '$payer', '$phone', '$event', '$email', '$cost', '$room', '$url', '$fio', '$org', '$order_id', '$password', '$order_number', '$order_status', CURRENT_TIMESTAMP, 'unsend')";
+		// $res = mysqli_query($connect, $sql);
+		if ($res = mysqli_query($connect, $sql)) {
+			$output = 'Информация о транзакции внесена в базу данных';
+		} else {
+			$output = 'Не удалось внести информацию в базу данных';
+		}
+	} else {
+		$output = 'Транзакция уже хранится в базе данных';
+	}
+	// Получение значения статуса отправки ссылки на чек.
+	$sql = "SELECT `mail_send`, `password` FROM `transaction` WHERE `order_number` = '$order_number'";
+	$res = mysqli_query($connect, $sql);
+	$res = mysqli_fetch_assoc($res);
+	$mail_state = $res['mail_send'];
+	$password = $res['password'];
+	// Отправляем почту, если статус отправки пуст или имеет значение не отправлено. 
+	if (!$mail_state || $mail_state == 'unsend') {
+		// Параметры отправки ссылки на чек.
+		$to     = 'sleshukov@sfu-kras.ru';
+		$key    = 'idshnik';
+		$params = array('body' => t("?orderNumber=$order_number&password=$password"));
+		// Отправка ссылки на чек.
+		$send = drupal_mail('sfu_pay_sber', $key, $to, language_default(), $params);
+		// Для отладки.
+		echo '<pre>';
+		print_r($send['result']);
+		echo '</pre>';
+		// Проверка отправки.
+		if ($send['result'] == 1) {
+			$output = 'Сообщение с чеком успешно отправлено на указанную почту';
+			$sql = "UPDATE `transaction` SET `mail_send` = 'send' WHERE `order_number` = '$order_number'";
+		} else {
+			$output = 'Не удалось отправить сообщение о платеже';
+			$sql = "UPDATE `transaction` SET `mail_send` = 'unsend' WHERE `order_number` = '$order_number'";
+		}
+		$res = mysqli_query($connect, $sql);
+	}
+	return $output;
+}
+
+/**
+ * Implements hook_mail().
+ */
+function sfu_pay_sber_mail($key, &$message, $params)
+{
+	switch ($key) {
+			// Ключ, добавленный при использовании функции drupal_mail()
+		case 'idshnik':
+			$message['subject'] = t('Example Email');
+			$message['body'][] = $params['body'];
+			break;
+	}
+}
+
+
+
+function _transaction_failure()
+{
+	return 'Неудача';
+}
+
+
+// !Было полезно.
+// drupal_add_js() - добавляет подключаемый js-файл.
+// drupal_get_path() - возвращает путь по типу и имени.
+
+// $link = mysqli_connect("localhost", "root", "", "db_pay");
+// if (!$link) {
+// 	$output = "Ошибка: Невозможно установить соединение с MySQL." . PHP_EOL;
+// 	$output .= "Код ошибки errno: " . mysqli_connect_errno() . PHP_EOL;
+// 	$output .= "Текст ошибки error: " . mysqli_connect_error() . PHP_EOL;
+// 	exit;
+// }
+// $output .= "Соединение с MySQL установлено!" . PHP_EOL;
+// $output .= "Информация о сервере: " . mysqli_get_host_info($link) . PHP_EOL;
+// mysqli_close($link);

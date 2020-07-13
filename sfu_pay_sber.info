@@ -1,0 +1,4 @@
+name = Sfu Pay Sber
+package = СФУ
+description = Добавляет функцию оплаты формы через Api Сбербанка.
+core = 6.x
