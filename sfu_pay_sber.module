@@ -15,20 +15,26 @@ function sfu_pay_sber_menu()
 {
 	$items['transaction-success'] = array(
 		'title' => 'Оплата успешно завершена',
-		'page callback' => '_transaction_success',
+		'page callback' => 'transaction_success',
 		'access arguments' => array('access content'),
 		'type' => MENU_CALLBACK
 	);
 	$items['transaction-failure'] = array(
 		'title' => 'Не удалось произвести оплату',
-		'page callback' => '_transaction_failure',
+		'page callback' => 'transaction_failure',
+		'access arguments' => array('access content'),
+		'type' => MENU_CALLBACK
+	);
+	$items['sberbank-cheque'] = array(
+		'title' => 'Информация о платеже за услугу СФУ',
+		'page callback' => 'cheque_output',
 		'access arguments' => array('access content'),
 		'type' => MENU_CALLBACK
 	);
 	return $items;
 }
 
-function _transaction_success()
+function transaction_success()
 {
 	// !Внесение успешной транзакции в базу данных.
 	// !Отправка ссылки на почту.
@@ -148,11 +154,56 @@ function sfu_pay_sber_mail($key, &$message, $params)
 
 
 
-function _transaction_failure()
+function transaction_failure()
 {
-	return 'Неудача';
+	$output = '<p>Не удалось совершить оплату. Статус транзакции: <b>НЕ оплачено</b>.</p>';
+	return $output;
 }
 
+// TODO: Сделать отправку на странице с ошибкой.
+
+function cheque_output()
+{
+
+	// ! Cтраница проверки чека.
+	// ?orderNumber=1594018660&password=ebqhx3z6ck
+	// Подключение к базе данных.
+	$connect = mysqli_connect("localhost", "root", "", "db_pay");
+	// Установка кодировки.
+	$connect->set_charset("utf8");
+	// Таймшамп, присвоенный транзакции.
+	$order_number = $_GET['orderNumber'];
+	// Пароль, писвоенный транзакции.
+	$password = $_GET['password'];
+	// Запрос в базу данных.
+	$sql = "SELECT * FROM `transaction` WHERE `order_number` = '$order_number' AND `password` = '$password'";
+	// Реализация запроса.
+	$res = mysqli_query($connect, $sql);
+	// Преобразование в ассоциативный массив.
+	$res = mysqli_fetch_assoc($res);
+	
+	// ! Для отладки.
+	echo '<pre>';
+	var_dump($res);
+	echo '</pre>';
+	
+	$test = 'ОПЛАЧЕНО';
+	// $output = "
+	// 	<h1>Чек</h1>
+	// 	<p>Статус платежа <b>$test</b></p>
+	// 	<pre>$res</pre>
+	// ";
+	ob_start();
+	require('sberbank-cheque.tpl.php');
+	$output = ob_get_contents();
+	ob_end_clean();
+	
+	return $output;
+}
+
+function _sfu_pay_sber_qrcode_link($res) {
+	return url('qrcode', array('absolute' => TRUE, 'query' => array('id' => $order_number, 'pass' => $password)));
+}
 
 // !Было полезно.
 // drupal_add_js() - добавляет подключаемый js-файл.
