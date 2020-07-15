@@ -13,46 +13,54 @@ function sfu_pay_sber_init()
  */
 function sfu_pay_sber_menu()
 {
+	// Страница успешной транзакции.
 	$items['transaction-success'] = array(
 		'title' => 'Оплата успешно завершена',
 		'page callback' => 'transaction_success',
 		'access arguments' => array('access content'),
 		'type' => MENU_CALLBACK
 	);
+	// Страница неудавшейся транзакции.
 	$items['transaction-failure'] = array(
 		'title' => 'Не удалось произвести оплату',
 		'page callback' => 'transaction_failure',
 		'access arguments' => array('access content'),
 		'type' => MENU_CALLBACK
 	);
+	// Страница вывода информации о транзакции.
 	$items['sberbank-cheque'] = array(
 		'title' => 'Информация о платеже за услугу СФУ',
 		'page callback' => 'cheque_output',
 		'access arguments' => array('access content'),
 		'type' => MENU_CALLBACK
 	);
+	// TODO: создать страницу для просмотра новой базы данных.
 	return $items;
 }
 
+/**
+ * Внесение успешной транзакции в базу данных.
+ * Отправка на почту плательщика ссылки на чек.
+ * Тестовые параметры: ?orderId=525606fb-cae8-70b7-a1be-05710211d19b&lang=ru
+ */
 function transaction_success()
 {
-	// !Внесение успешной транзакции в базу данных.
-	// !Отправка ссылки на почту.
-	// ?Тестовые параметры: ?orderId=525606fb-cae8-70b7-a1be-05710211d19b&lang=ru
-	// Имя пользователя Api.
-	$user_name = 'sfu-kras-api';
-	// Пароль пользователя Api.
-	$password = 'sfuapi273076';
-	// Идентификатор транзакции из параметров запроса.
+	// Подключение файла доступов.
+	require('access.php');
+
 	$order_id = $_GET['orderId'];
 	// Запрос на получение статуса транзакции.
-	$url_status_transaction = "https://securepayments.sberbank.ru/payment/rest/getOrderStatusExtended.do?userName=$user_name&password=$password&orderId=$order_id";
+	$url_status_transaction = "https://securepayments.sberbank.ru/payment/rest/getOrderStatusExtended.do?userName=$api_name&password=$api_pass&orderId=$order_id";
 	// Отправка запроса.
 	$get_transaction_info = file_get_contents($url_status_transaction);
 	// Преобразование json в ассоциативный массив.
 	$get_transaction_info = json_decode($get_transaction_info, TRUE);
 	// Статус транзакции.
 	$get_status = $get_transaction_info['orderStatus'];
+	// ! Для отладки.
+	echo '<pre>';
+	print ($api_pass_t);
+	echo '</pre>';
 	// Поля формы.
 	$get_fields = $get_transaction_info['merchantOrderParams'];
 	// Преобразование имен и значений переданных полей формы в ассоциативный массив.
@@ -82,6 +90,8 @@ function transaction_success()
 	$order_status   = $get_transaction_info['orderStatus'];
 	$service        = $get_transaction_info['orderDescription'];
 	$cost           = $get_transaction_info['paymentAmountInfo']['approvedAmount'] / 100;
+	// Подготовка некоторых выражений для занесения в базу данных.
+	if ($order_status == 2) {$order_status = 'оплачено';};
 	// Подключение к базе данных.
 	$connect = mysqli_connect("localhost", "root", "", "db_pay");
 	// Установка кодировки.
@@ -96,8 +106,10 @@ function transaction_success()
 		$hash = '0123456789qwertyuiopasdfghjklzxcvbnm';
 		$password = str_shuffle($hash);
 		$password = substr($password, 0, 10);
+		// !Заменить урл на боевом сервере.
+		$cheque_link = "http://hg.pay/sberbank-cheque?orderNumber=$order_number&password=$password";
 		// Внесение информации в базу данных.
-		$sql = "INSERT INTO `transaction` VALUES (NULL, '$description', '$libnumber', '$personal', '$package', '$service', '$surname', '$address', '$dogovor', '$hostel', '$status', '$payer', '$phone', '$event', '$email', '$cost', '$room', '$url', '$fio', '$org', '$order_id', '$password', '$order_number', '$order_status', CURRENT_TIMESTAMP, 'unsend')";
+		$sql = "INSERT INTO `transaction` VALUES (NULL, '$description', '$libnumber', '$personal', '$package', '$service', '$surname', '$address', '$dogovor', '$hostel', '$status', '$payer', '$phone', '$event', '$email', '$cost', '$room', '$url', '$fio', '$org', '$order_id', '$password', '$order_number', '$order_status', CURRENT_TIMESTAMP, 'unsend', '$cheque_link')";
 		// $res = mysqli_query($connect, $sql);
 		if ($res = mysqli_query($connect, $sql)) {
 			$output = 'Информация о транзакции внесена в базу данных';
@@ -118,7 +130,7 @@ function transaction_success()
 		// Параметры отправки ссылки на чек.
 		$to     = 'sleshukov@sfu-kras.ru';
 		$key    = 'idshnik';
-		$params = array('body' => t("?orderNumber=$order_number&password=$password"));
+		$params = array('body' => t($cheque_link));
 		// Отправка ссылки на чек.
 		$send = drupal_mail('sfu_pay_sber', $key, $to, language_default(), $params);
 		// Для отладки.
@@ -182,10 +194,7 @@ function cheque_output()
 	// Преобразование в ассоциативный массив.
 	$res = mysqli_fetch_assoc($res);
 	
-	// ! Для отладки.
-	echo '<pre>';
-	var_dump($res);
-	echo '</pre>';
+	
 	
 	$test = 'ОПЛАЧЕНО';
 	// $output = "
@@ -201,21 +210,46 @@ function cheque_output()
 	return $output;
 }
 
-function _sfu_pay_sber_qrcode_link($res) {
-	return url('qrcode', array('absolute' => TRUE, 'query' => array('id' => $order_number, 'pass' => $password)));
-}
 
-// !Было полезно.
+// ! Коды orderStatus
+// 0 - заказ зарегистрирован, но не оплачен;
+// 1 - предавторизованная сумма удержана (для двухстадийных платежей);
+// 2 - проведена полная авторизация суммы заказа;
+// 3 - авторизация отменена;
+// 4 - по транзакции была проведена операция возврата;
+// 5 - инициирована авторизация через сервер контроля доступа банка-эмитента;
+// 6 - авторизация отклонена.
+
+// ! Коды ошибок
+// 0	Обработка запроса прошла без системных ошибок.
+// 5 - Доступ запрещён.
+// 5 - Пользователь должен сменить свой пароль.
+// 5 - [orderId] не задан.
+// 6 - Незарегистрированный orderId.
+// 7 - Системная ошибка.
+
+// ! Было полезно:
 // drupal_add_js() - добавляет подключаемый js-файл.
 // drupal_get_path() - возвращает путь по типу и имени.
+// $_SERVER - Содержит данные о конфигурации сервера и конфигурации клиента.
+// str_shuffle() - Перемешивает символы в передаваемой строке случайным образом.
+// substr() - Обрезает строку.
+/*
+* $link = mysqli_connect("localhost", "root", "", "db_pay");
+* if (!$link) {
+*     echo "Ошибка: Невозможно установить соединение с MySQL." . PHP_EOL;
+*     echo "Код ошибки errno: " . mysqli_connect_errno() . PHP_EOL;
+*     echo "Текст ошибки error: " . mysqli_connect_error() . PHP_EOL;
+*     exit;
+* }
+* echo "Соединение с MySQL установлено!" . PHP_EOL;
+* echo "Информация о сервере: " . mysqli_get_host_info($link) . PHP_EOL;
+* mysqli_close($link);
+*/
 
-// $link = mysqli_connect("localhost", "root", "", "db_pay");
-// if (!$link) {
-// 	$output = "Ошибка: Невозможно установить соединение с MySQL." . PHP_EOL;
-// 	$output .= "Код ошибки errno: " . mysqli_connect_errno() . PHP_EOL;
-// 	$output .= "Текст ошибки error: " . mysqli_connect_error() . PHP_EOL;
-// 	exit;
-// }
-// $output .= "Соединение с MySQL установлено!" . PHP_EOL;
-// $output .= "Информация о сервере: " . mysqli_get_host_info($link) . PHP_EOL;
-// mysqli_close($link);
+// TODO:
+// Создать 2 страницы с помощью hook_menu(). Одна для перенаправления после успешной транзакции. Другая для перенаправления после ошибки.
+// На обоих страницах разместить код отправки ссылки на чек.
+// При этом в базу данных должна попадать запись об успешной отправке ссылки на чек на почту. И если в базе есть запись об отправке. То отправлять не нужно.
+// Создать страницу чека.
+// Осуществить на ней вывод информации из базы данных.
