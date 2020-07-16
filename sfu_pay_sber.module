@@ -35,6 +35,7 @@ function sfu_pay_sber_menu()
 		'type' => MENU_CALLBACK
 	);
 	// TODO: создать страницу для просмотра новой базы данных.
+	// TODO: создать страницу в которой можно получить чек только по orderId. На случай, если по какой то причине информация не была занесена в базу данных.
 	return $items;
 }
 
@@ -45,30 +46,28 @@ function sfu_pay_sber_menu()
  */
 function transaction_success()
 {
-	// Подключение файла доступов.
+	// Подключение файла с доступами.
 	require('access.php');
 
+	// Получение orderId из параметров запроса.
 	$order_id = $_GET['orderId'];
+
 	// Запрос на получение статуса транзакции.
-	$url_status_transaction = "https://securepayments.sberbank.ru/payment/rest/getOrderStatusExtended.do?userName=$api_name&password=$api_pass&orderId=$order_id";
+	$get_transaction_info = "$order_status_do?userName=$api_name&password=$api_pass&orderId=$order_id";
 	// Отправка запроса.
-	$get_transaction_info = file_get_contents($url_status_transaction);
+	$get_transaction_info = file_get_contents($get_transaction_info);
 	// Преобразование json в ассоциативный массив.
 	$get_transaction_info = json_decode($get_transaction_info, TRUE);
-	// Статус транзакции.
-	$get_status = $get_transaction_info['orderStatus'];
-	// ! Для отладки.
-	echo '<pre>';
-	print ($api_pass_t);
-	echo '</pre>';
-	// Поля формы.
+
+	// Получение полей формы, заполненной пользователем перед совершением транзакции.
 	$get_fields = $get_transaction_info['merchantOrderParams'];
 	// Преобразование имен и значений переданных полей формы в ассоциативный массив.
 	$fields = array();
 	foreach ($get_fields as $key => $value) {
 		$fields[$value['name']] = $value['value'];
-	}
-	// Значения для занесения в базу данных.
+	};
+
+	// Подготовка значений для занесения в базу данных.
 	$description    = $fields['Описание'];
 	$libnumber      = $fields['Читательский билет'];
 	$personal       = $fields['personal'];
@@ -90,63 +89,45 @@ function transaction_success()
 	$order_status   = $get_transaction_info['orderStatus'];
 	$service        = $get_transaction_info['orderDescription'];
 	$cost           = $get_transaction_info['paymentAmountInfo']['approvedAmount'] / 100;
-	// Подготовка некоторых выражений для занесения в базу данных.
-	if ($order_status == 2) {$order_status = 'оплачено';};
-	// Подключение к базе данных.
-	$connect = mysqli_connect("localhost", "root", "", "db_pay");
-	// Установка кодировки.
-	$connect->set_charset("utf8");
-	// Проверка наличия ордера в базе данных.
-	$sql = "SELECT * FROM `transaction` WHERE `order_id` = '$order_id'";
-	$res = mysqli_query($connect, $sql);
-	$res = mysqli_num_rows($res);
-	// Если транзакции с текущим orderId не существует, то заносим ее в базу данных.
-	if ($res == 0) {
-		// Генерация пароля для доступа к чеку.
-		$hash = '0123456789qwertyuiopasdfghjklzxcvbnm';
-		$password = str_shuffle($hash);
-		$password = substr($password, 0, 10);
-		// !Заменить урл на боевом сервере.
-		$cheque_link = "http://hg.pay/sberbank-cheque?orderNumber=$order_number&password=$password";
-		// Внесение информации в базу данных.
-		$sql = "INSERT INTO `transaction` VALUES (NULL, '$description', '$libnumber', '$personal', '$package', '$service', '$surname', '$address', '$dogovor', '$hostel', '$status', '$payer', '$phone', '$event', '$email', '$cost', '$room', '$url', '$fio', '$org', '$order_id', '$password', '$order_number', '$order_status', CURRENT_TIMESTAMP, 'unsend', '$cheque_link')";
-		// $res = mysqli_query($connect, $sql);
-		if ($res = mysqli_query($connect, $sql)) {
-			$output = 'Информация о транзакции внесена в базу данных';
+	$password 		= _password_generate();
+
+	// Преобразование статуса транзакции для занесения в базу данных.
+	if ($order_status == 2) {
+		$order_status = 'оплачено';
+	};
+	// Преобразования ссылки на чек для занесения в базу данных.
+	if ($_SERVER['REMOTE_ADDR'] == '10.0.73.91') {
+		$link_cheque = "https://pay.sfu-kras.ru/sberbank-cheque?orderNumber=$order_number&password=$password";
+	} elseif ($_SERVER['REMOTE_ADDR'] == '127.0.0.1') {
+		$link_cheque = "http://hg.pay/sberbank-cheque?orderNumber=$order_number&password=$password";
+	}
+
+	// Проверка наличия в базе транзакции по orderId.
+	$check = _db_query_check($connect, "SELECT * FROM `transaction` WHERE `order_id` = '$order_id'");
+
+	// Если транзакции нет в базе данных, то добавляем ее.
+	if ($check == 0) {
+		$output .= 'Транзакции еще нет в базе данных.<br>';
+		$res = _db_query_add($connect, "INSERT INTO `transaction` VALUES (NULL, '$description', '$libnumber', '$personal', '$package', '$service', '$surname', '$address', '$dogovor', '$hostel', '$status', '$payer', '$phone', '$event', '$email', '$cost', '$room', '$url', '$fio', '$org', '$order_id', '$password', '$order_number', '$order_status', CURRENT_TIMESTAMP, '', '$link_cheque')");
+		if ($res) {
+			$output .= 'Транзакция добавлена в базу данных.<br>';
+			// Отправка сообщения с ссылкой на чек.
+			$send = drupal_mail('sfu_pay_sber', 'key_mail_sber', $email, language_default(), array('body' => t($link_cheque)));
+			// Проверка отправки с внесением отметки в базу данных.
+			if ($send['result'] == 1) {
+				_db_query_update($connect, "UPDATE `transaction` SET `mail_send` = 'send' WHERE `order_number` = '$order_number'");
+				$output .= 'Ссылка на чек отправлена на почту.<br>';
+			} else {
+				_db_query_update($connect, "UPDATE `transaction` SET `mail_send` = 'unsend' WHERE `order_number` = '$order_number'");
+				$output .= 'Не удалось отправить на почту ссылку на чек.<br>';
+			}
 		} else {
-			$output = 'Не удалось внести информацию в базу данных';
+			$output .= 'Не удалось добавить транзакцию в базу данных';
 		}
 	} else {
-		$output = 'Транзакция уже хранится в базе данных';
+		$output .= 'Транзакция уже хранится в базе данных.<br>';
 	}
-	// Получение значения статуса отправки ссылки на чек.
-	$sql = "SELECT `mail_send`, `password` FROM `transaction` WHERE `order_number` = '$order_number'";
-	$res = mysqli_query($connect, $sql);
-	$res = mysqli_fetch_assoc($res);
-	$mail_state = $res['mail_send'];
-	$password = $res['password'];
-	// Отправляем почту, если статус отправки пуст или имеет значение не отправлено. 
-	if (!$mail_state || $mail_state == 'unsend') {
-		// Параметры отправки ссылки на чек.
-		$to     = 'sleshukov@sfu-kras.ru';
-		$key    = 'idshnik';
-		$params = array('body' => t($cheque_link));
-		// Отправка ссылки на чек.
-		$send = drupal_mail('sfu_pay_sber', $key, $to, language_default(), $params);
-		// Для отладки.
-		echo '<pre>';
-		print_r($send['result']);
-		echo '</pre>';
-		// Проверка отправки.
-		if ($send['result'] == 1) {
-			$output = 'Сообщение с чеком успешно отправлено на указанную почту';
-			$sql = "UPDATE `transaction` SET `mail_send` = 'send' WHERE `order_number` = '$order_number'";
-		} else {
-			$output = 'Не удалось отправить сообщение о платеже';
-			$sql = "UPDATE `transaction` SET `mail_send` = 'unsend' WHERE `order_number` = '$order_number'";
-		}
-		$res = mysqli_query($connect, $sql);
-	}
+
 	return $output;
 }
 
@@ -156,15 +137,13 @@ function transaction_success()
 function sfu_pay_sber_mail($key, &$message, $params)
 {
 	switch ($key) {
-			// Ключ, добавленный при использовании функции drupal_mail()
-		case 'idshnik':
-			$message['subject'] = t('Example Email');
+		// Ключ, добавленный при использовании функции drupal_mail()
+		case 'key_mail_sber':
+			$message['subject'] = t('Чек об оплате услуги на pay.sfu-kras.ru');
 			$message['body'][] = $params['body'];
 			break;
 	}
 }
-
-
 
 function transaction_failure()
 {
@@ -172,46 +151,21 @@ function transaction_failure()
 	return $output;
 }
 
-// TODO: Сделать отправку на странице с ошибкой.
-
+/**
+ * Страница вывода чека об оплате.
+ * Тестовые параметры: ?orderNumber=1594018660&password=ebqhx3z6ck
+ */
 function cheque_output()
 {
-
-	// ! Cтраница проверки чека.
-	// ?orderNumber=1594018660&password=ebqhx3z6ck
-	// Подключение к базе данных.
-	$connect = mysqli_connect("localhost", "root", "", "db_pay");
-	// Установка кодировки.
-	$connect->set_charset("utf8");
-	// Таймшамп, присвоенный транзакции.
-	$order_number = $_GET['orderNumber'];
-	// Пароль, писвоенный транзакции.
-	$password = $_GET['password'];
-	// Запрос в базу данных.
-	$sql = "SELECT * FROM `transaction` WHERE `order_number` = '$order_number' AND `password` = '$password'";
-	// Реализация запроса.
-	$res = mysqli_query($connect, $sql);
-	// Преобразование в ассоциативный массив.
-	$res = mysqli_fetch_assoc($res);
-	
-	
-	
-	$test = 'ОПЛАЧЕНО';
-	// $output = "
-	// 	<h1>Чек</h1>
-	// 	<p>Статус платежа <b>$test</b></p>
-	// 	<pre>$res</pre>
-	// ";
+	// Вывод шаблоны страницы.
 	ob_start();
 	require('sberbank-cheque.tpl.php');
 	$output = ob_get_contents();
 	ob_end_clean();
-	
 	return $output;
 }
 
-
-// ! Коды orderStatus
+// ! Коды orderStatus:
 // 0 - заказ зарегистрирован, но не оплачен;
 // 1 - предавторизованная сумма удержана (для двухстадийных платежей);
 // 2 - проведена полная авторизация суммы заказа;
@@ -220,7 +174,7 @@ function cheque_output()
 // 5 - инициирована авторизация через сервер контроля доступа банка-эмитента;
 // 6 - авторизация отклонена.
 
-// ! Коды ошибок
+// ! Коды ошибок:
 // 0	Обработка запроса прошла без системных ошибок.
 // 5 - Доступ запрещён.
 // 5 - Пользователь должен сменить свой пароль.
@@ -228,12 +182,14 @@ function cheque_output()
 // 6 - Незарегистрированный orderId.
 // 7 - Системная ошибка.
 
-// ! Было полезно:
+// ! Новое в друпал:
 // drupal_add_js() - добавляет подключаемый js-файл.
 // drupal_get_path() - возвращает путь по типу и имени.
-// $_SERVER - Содержит данные о конфигурации сервера и конфигурации клиента.
+
+// ! Новое в PHP:
 // str_shuffle() - Перемешивает символы в передаваемой строке случайным образом.
-// substr() - Обрезает строку.
+
+// ! Полезные фрагменты кода:
 /*
 * $link = mysqli_connect("localhost", "root", "", "db_pay");
 * if (!$link) {
@@ -246,10 +202,3 @@ function cheque_output()
 * echo "Информация о сервере: " . mysqli_get_host_info($link) . PHP_EOL;
 * mysqli_close($link);
 */
-
-// TODO:
-// Создать 2 страницы с помощью hook_menu(). Одна для перенаправления после успешной транзакции. Другая для перенаправления после ошибки.
-// На обоих страницах разместить код отправки ссылки на чек.
-// При этом в базу данных должна попадать запись об успешной отправке ссылки на чек на почту. И если в базе есть запись об отправке. То отправлять не нужно.
-// Создать страницу чека.
-// Осуществить на ней вывод информации из базы данных.
