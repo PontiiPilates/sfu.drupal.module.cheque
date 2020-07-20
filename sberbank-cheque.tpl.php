@@ -2,21 +2,23 @@
 	// Подключение файла с доступами.
 	require('access.php');
 
+
+	
 	// Таймшамп, присвоенный транзакции.
 	$order_number = $_GET['orderNumber'];
 	// Пароль, писвоенный транзакции.
 	$password = $_GET['password'];
-
+	
 	// Преобразования ссылки на чек для занесения в базу данных.
 	if ($_SERVER['REMOTE_ADDR'] == '10.0.73.91') {
 		$link_cheque = 'https://' . $_SERVER['SERVER_NAME'] . $_SERVER['REQUEST_URI'];
 	} elseif ($_SERVER['REMOTE_ADDR'] == '127.0.0.1') {
 		$link_cheque = 'http://' . $_SERVER['SERVER_NAME'] . $_SERVER['REQUEST_URI'];
 	}
-
+	
 	// Вывод информации из базы данных.
 	$output = _db_query_output($connect, "SELECT * FROM `transaction` WHERE `order_number` = '$order_number' AND `password` = '$password'");
-?>
+	?>
 
 <p>
 	<?php
@@ -26,6 +28,7 @@
 		if ($output['cost']) {print 'Сумма оплаты: ' . $output['cost'] . ' руб.<br>';};
 		if ($output['order_number']) {print 'Номер транзакции, присвоенный сервисом: ' . $output['order_number'] . '<br>';};
 		if ($output['datetime']) {print 'Дата и время совершения транзакции: ' . date('d-m-Y г. — H:i', $output['order_number']) . '<br>';};
+		if ($output['mail_send']) {print 'Сообщение со ссылкой отправлено на почту: ' . date('d-m-Y г. — H:i', $output['mail_send']) . '<br>';};
 	?>
 </p>
 
@@ -68,6 +71,7 @@
 
 <div>
 	<img src="http://chart.apis.google.com/chart?choe=UTF-8&chld=H&cht=qr&chs=200x200&chl=<?php print $link_cheque; ?>">
+
 </div>
 
 <p>Ссылка на эту квитанцию: <a href="<?php print $link_cheque; ?>"><?php print $link_cheque; ?></a>
