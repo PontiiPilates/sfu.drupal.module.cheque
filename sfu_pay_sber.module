@@ -13,6 +13,7 @@ function sfu_pay_sber_init()
  */
 function sfu_pay_sber_menu()
 {
+	$items = array();
 	// Страница успешной транзакции.
 	$items['transaction-success'] = array(
 		'title' => 'Оплата успешно завершена',
@@ -27,17 +28,52 @@ function sfu_pay_sber_menu()
 		'access arguments' => array('access content'),
 		'type' => MENU_CALLBACK
 	);
-	// Страница вывода информации о транзакции.
+	// Страница вывода чека.
 	$items['sberbank-cheque'] = array(
 		'title' => 'Информация о платеже за услугу СФУ',
 		'page callback' => 'cheque_output',
 		'access arguments' => array('access content'),
 		'type' => MENU_CALLBACK
 	);
+	// Страница выдачи чека по id транзакции.
+	$items['get-cheque'] = array(
+		'title' => 'Получить чек по orderId транзакции',
+		'page callback' => 'render_get_check',
+		'access arguments' => array('access content'),
+		// 'access callback' => TRUE,
+		'type' => MENU_CALLBACK
+	);
 	// TODO: создать страницу для просмотра новой базы данных.
-	// TODO: создать страницу в которой можно получить чек только по orderId. На случай, если по какой то причине информация не была занесена в базу данных.
 	return $items;
 }
+
+/**
+ * Отправка данных из формы на страницу успешной оплаты.
+ * Тестовые параметры: http://hg.pay/get-cheque
+ */
+function get_check()
+{
+	$form = array();
+	$form['#method'] = 'GET';
+	// TODO: сделать урл подходящим как для локального сервера, так и для боевого.
+	$form['#action'] = url('http://hg.pay/transaction-success');
+	$form['transaction_orderId'] = array(
+		'#title' => 'Введите orderId вашей транзакции',
+		'#type' => 'textfield',
+		'#required' => TRUE,
+		'#description' => 'Например: 525606fb-cae8-70b7-a1be-05710211d19b',
+	);
+	$form['send_transaction_id'] = array(
+		'#type' => 'submit',
+		'#value' => t('Получить чек'),
+	);
+	return $form;
+}
+
+function render_get_check() {
+	$out  = drupal_get_form('get_check');   
+  return $out;
+  }
 
 /**
  * Внесение успешной транзакции в базу данных.
@@ -50,7 +86,12 @@ function transaction_success()
 	require('access.php');
 
 	// Получение orderId из параметров запроса.
-	$order_id = $_GET['orderId'];
+	$order_id = '';
+	if ($_GET['orderId']) {
+		$order_id = $_GET['orderId'];
+	} elseif ($_GET['transaction_orderId']) {
+		$order_id = $_GET['transaction_orderId'];
+	}
 
 	// Запрос на получение статуса транзакции.
 	$get_transaction_info = "$order_status_do?userName=$api_name&password=$api_pass&orderId=$order_id";
@@ -91,7 +132,7 @@ function transaction_success()
 	$cost           = $get_transaction_info['paymentAmountInfo']['approvedAmount'] / 100;
 	$password 		= _password_generate();
 	$transfer_data	= array();
-	
+
 	// Преобразование статуса транзакции для занесения в базу данных.
 	if ($order_status == 2) {
 		$order_status = 'оплачено';
@@ -102,25 +143,7 @@ function transaction_success()
 	} elseif ($_SERVER['REMOTE_ADDR'] == '127.0.0.1') {
 		$link_cheque = "http://hg.pay/sberbank-cheque?orderNumber=$order_number&password=$password";
 	}
-	
-	
 
-
-
-
-
-
-
-	// Добавление записи в базу данных.
-	$check__adding_transaction = _db_query_add($connect, "INSERT INTO `transaction` VALUES (NULL, '$description', '$libnumber', '$personal', '$package', '$service', '$surname', '$address', '$dogovor', '$hostel', '$status', '$payer', '$phone', '$event', '$email', '$cost', '$room', '$url', '$fio', '$org', '$order_id', '$password', '$order_number', '$order_status', CURRENT_TIMESTAMP, 'unsend', '$link_cheque')");
-	if ($check__adding_transaction) {
-		$transfer_data['adding_transaction'] = TRUE;
-		$transfer_data['adding_transaction__message'] = 'Транзакция добавлена в базу данных';
-	} else {
-		$transfer_data['adding_transaction'] = FALSE;
-		$transfer_data['adding_transaction'] = 'Не удалось добавить транзакцию в базу данных. Сохраните ссылку на чек и сообщите о проблеме разработчикам: info@sfu-kras.ru, тел. 206-98-60';
-	}
-	
 	// Поиск транзакции в базе по orderId.
 	$check__transaction_in_db = _db_query_check($connect, "SELECT * FROM `transaction` WHERE `order_id` = '$order_id'");
 	if ($check__transaction_in_db) {
@@ -129,55 +152,52 @@ function transaction_success()
 	} else {
 		$transfer_data['transaction_in_db'] = FALSE;
 		$transfer_data['transaction_in_db__message'] = 'Транзакци нет в базе данных';
+
+		// Добавление записи в базу данных.
+		$check__adding_transaction = _db_query_add($connect, "INSERT INTO `transaction` VALUES (NULL, '$description', '$libnumber', '$personal', '$package', '$service', '$surname', '$address', '$dogovor', '$hostel', '$status', '$payer', '$phone', '$event', '$email', '$cost', '$room', '$url', '$fio', '$org', '$order_id', '$password', '$order_number', '$order_status', CURRENT_TIMESTAMP, 'unsend', '$link_cheque')");
+		if ($check__adding_transaction) {
+			$transfer_data['adding_transaction'] = TRUE;
+			$transfer_data['adding_transaction__message'] = 'Транзакция добавлена в базу данных';
+		} else {
+			$transfer_data['adding_transaction'] = FALSE;
+			$transfer_data['adding_transaction'] = 'Не удалось добавить транзакцию в базу данных. Сохраните ссылку на чек и сообщите о проблеме разработчикам: info@sfu-kras.ru, тел. 206-98-60';
+		}
 	}
-	
-	// Отправка сообщения со ссылкой на почту.
-	$check__mail_send = drupal_mail('sfu_pay_sber', 'key_mail_sber', $email, language_default(), array('body' => t($link_cheque)));
-	if ($check__mail_send['result']) {
-		$transfer_data['mail_send'] = TRUE;
-		$transfer_data['mail_send__message'] = 'Сообщение со ссылкой отправлено на указанную почту';
-	} else {
-		$transfer_data['mail_send'] = FALSE;
-		$transfer_data['mail_send__message'] = 'Не удалось отправить сообщение на почту';
-	}
-	
+
 	// Получение статуса отправки email.
 	$check__mail_state = _db_query_check($connect, "SELECT * FROM `transaction` WHERE `mail_send` = 'unsend' AND `order_id` = '$order_id'");
 	if ($check__mail_state) {
-		$transfer_data['mail_state'] = FALSE;
-		$transfer_data['mail_state__message'] = 'Email со ссылкой на чек об оплате еще не был отправлен';
-	} else {
 		$transfer_data['mail_state'] = TRUE;
-		$transfer_data['mail_state__message'] = 'Ссылка на чек об оплате отправлена на указанный email';
-	}
-	
-	// Занесение отметки об отправке сообщения на почту.
-	$datetime = mktime();
-	$check__mail_state_update = _db_query_update($connect, "UPDATE `transaction` SET `mail_send` = '$datetime' WHERE `order_id` = '$order_id'");
-	if ($check__mail_state_update) {
-		$transfer_data['mail_state_update'] = FALSE;
-		$transfer_data['mail_state_update__message'] = 'Обновление статуса отправки email завершено';
+		$transfer_data['mail_state__message'] = 'Email со ссылкой на чек об оплате еще не был отправлен';
+
+		// Отправка сообщения со ссылкой на почту.
+		$check__mail_send = drupal_mail('sfu_pay_sber', 'key_mail_sber', $email, language_default(), array('body' => t($link_cheque)));
+		if ($check__mail_send['result']) {
+			$transfer_data['mail_send'] = TRUE;
+			$transfer_data['mail_send__message'] = 'Сообщение со ссылкой отправлено на указанную почту';
+
+			// Занесение отметки об отправке сообщения на почту.
+			$datetime = time();
+			$check__mail_state_update = _db_query_update($connect, "UPDATE `transaction` SET `mail_send` = '$datetime' WHERE `order_id` = '$order_id'");
+			if ($check__mail_state_update) {
+				$transfer_data['mail_state_update'] = TRUE;
+				$transfer_data['mail_state_update__message'] = 'Обновление статуса отправки email завершено';
+			} else {
+				$transfer_data['mail_state_update'] = FALSE;
+				$transfer_data['mail_state_update__message'] = 'Не удалось обновить статус отправки email';
+			}
+		} else {
+			$transfer_data['mail_send'] = FALSE;
+			$transfer_data['mail_send__message'] = 'Не удалось отправить сообщение на почту';
+		}
 	} else {
-		$transfer_data['mail_state_update'] = TRUE;
-		$transfer_data['mail_state_update__message'] = 'Не удалось обновить статус отправки email';
+		$transfer_data['mail_state'] = FALSE;
+		$transfer_data['mail_state__message'] = 'Ссылка на чек об оплате была отправлена на указанный email';
 	}
-
-	
-	print '<pre>';
-	print_r($transfer_data);
-	print '</pre>';
-	
-
-
-
-
-
-
 
 	$link_cheque = _db_query_output($connect, "SELECT `cheque_link` FROM `transaction` WHERE `order_id` = '$order_id'");
 	$link_cheque = $link_cheque['cheque_link'];
-	// return header("Location: $link_cheque");
-	// return print_r($transfer_data);
+	return header("Location: $link_cheque");
 }
 
 /**
@@ -186,7 +206,7 @@ function transaction_success()
 function sfu_pay_sber_mail($key, &$message, $params)
 {
 	switch ($key) {
-		// Ключ, добавленный при использовании функции drupal_mail()
+			// Ключ, добавленный при использовании функции drupal_mail()
 		case 'key_mail_sber':
 			$message['subject'] = t('Чек об оплате услуги на pay.sfu-kras.ru');
 			$message['body'][] = $params['body'];

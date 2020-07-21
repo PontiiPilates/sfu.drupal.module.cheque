@@ -1,8 +1,6 @@
 <?php
 	// Подключение файла с доступами.
 	require('access.php');
-
-
 	
 	// Таймшамп, присвоенный транзакции.
 	$order_number = $_GET['orderNumber'];
