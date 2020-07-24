@@ -68,6 +68,7 @@ function _db_query_update($connect, $query)
 
 /**
  * Вывод информации из базы данных.
+ * Выводит строку в виде ассоциативного массива, подходящую под критерии.
  */
 function _db_query_output($connect, $query)
 {
@@ -75,6 +76,18 @@ function _db_query_output($connect, $query)
 	$res = mysqli_fetch_assoc($res);
     return $res;
 }
+
+/**
+ * Вывод информации из базы данных.
+ * Выводит строки в виде многоуровнего массива, подходящие под критерии.
+ */
+function _db_query_output_all($connect, $query)
+{
+    $res = mysqli_query($connect, $query);
+	$res = mysqli_fetch_all($res, MYSQLI_ASSOC);
+    return $res;
+}
+
 
 /**
  * Генерация слуяайного буквенно-цифрового набора.

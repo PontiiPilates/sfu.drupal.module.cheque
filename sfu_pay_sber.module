@@ -43,8 +43,109 @@ function sfu_pay_sber_menu()
 		// 'access callback' => TRUE,
 		'type' => MENU_CALLBACK
 	);
-	// TODO: создать страницу для просмотра новой базы данных.
+	$items['sberbank-register'] = array(
+		'title' => 'Реестр транзакций через интернет-эквайринг от Сбербанка',
+		'page callback' => 'registry_output',
+		'access arguments' => array('access content'),
+		// 'access callback' => TRUE,
+		'type' => MENU_CALLBACK
+	);
 	return $items;
+}
+
+function registry_output(){
+	// Вывод шаблоны страницы.
+	ob_start();
+	require('sberbank-register.tpl.php');
+	$output = ob_get_contents();
+	ob_end_clean();
+	return $output;
+}
+
+function sberbank_register_form() {
+	// Подключение файла с доступами.
+	// require('access.php');
+
+	// $service = _db_query_output($connect, "SELECT DISTINCT `service` FROM `transaction`")
+
+	
+	// Запрос для выборки по ФИО плательщика.
+	// "SELECT * FROM transaction WHERE payer LIKE '%Тес%'";
+
+	// Запрос для поиска по номеру договора
+	// "SELECT * FROM transaction WHERE dogovor = '123'";
+
+	// Запрос для поиска по диапазону дат
+	// strtotime()
+	// "SELECT * FROM transaction WHERE order_number BETWEEN 1594022000 AND 1594022080";
+
+	// Запрос для аггрегации услуг оплаты.
+	// "SELECT DISTINCT `service` FROM `transaction`";
+	// print_r($_POST);
+
+
+	$services = _db_query_output_all($connect, "SELECT DISTINCT `service` FROM `transaction`");
+	$options = array();
+	foreach ($services as $v){
+		foreach ($v as $mv) {
+			$options[] = $mv;
+		}
+	}
+	
+	// print'<pre>';
+	// print_r($_POST);
+	// print'</pre>';
+
+	$form = array();
+	$form['#method'] = 'POST';
+	$form['#action'] = url('http://hg.pay/sberbank-register');
+	$form['data_payer'] = array(
+		'#title' => 'Поиск по ФИО плательщика',
+		'#type' => 'textfield',
+	);
+	$form['date_start'] = array(
+		'#title' => 'Поиск по диапазону дат, от',
+		'#type' => 'date',
+	);
+	$form['date_end'] = array(
+		'#title' => 'Поиск по диапазону дат, до',
+		'#type' => 'date',
+	);
+	$form['contract_number'] = array(
+		'#title' => 'Поиск по номеру договора',
+		'#type' => 'textfield',
+	);
+	$form['service'] = array(
+		'#title' => 'Поиск по номеру договора',
+		'#type' => 'select',
+		'#options' => $options,
+	);
+	$form['send_form_data'] = array(
+		'#type' => 'submit',
+		'#value' => t('Получить чек'),
+	);
+	return $form;
+
+}
+
+function render_sberbank_register(){
+	require('access.php');
+
+	// print_r($_POST['contract_number']);
+
+	$dog = $_POST['contract_number'];
+
+	$asd = _db_query_output($connect, "SELECT * FROM transaction WHERE dogovor = '$dog'");
+	// print_r($asd['dogovor']);
+
+
+
+
+	$html = '';
+	$html .= drupal_get_form('sberbank_register_form');
+	$html .= "Вывод post: " . print $asd;
+
+	return $html;
 }
 
 /**
