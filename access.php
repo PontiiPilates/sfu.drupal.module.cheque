@@ -28,6 +28,16 @@ $api_pass        = 'sfuapi273076';
 $returnUrl         = 'https://pay.sfu-kras.ru/transaction-success';
 $failUrl           = 'https://pay.sfu-kras.ru/transaction-failure';
 
+// Имя таблицы базы данных для реестра
+$table_name = 'transaction';
+
+// Боевой сервер
+$url_prefix = 'https://pay.sfu-kras.ru';
+// Локальный сервер
+if ($_SERVER['REMOTE_ADDR'] == '127.0.0.1') {
+    $url_prefix = 'http://hg.pay';
+}
+
 // Подключение к базе данных на локальном сервере.
 $connect = mysqli_connect("localhost", "root", "", "db_pay");
 // $connect = mysqli_connect("localhost", "root", "", "db_pay");

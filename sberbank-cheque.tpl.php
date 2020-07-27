@@ -6,16 +6,11 @@
 	$order_number = $_GET['orderNumber'];
 	// Пароль, писвоенный транзакции.
 	$password = $_GET['password'];
-	
-	// Преобразования ссылки на чек для занесения в базу данных.
-	if ($_SERVER['REMOTE_ADDR'] == '10.0.73.91') {
-		$link_cheque = 'https://' . $_SERVER['SERVER_NAME'] . $_SERVER['REQUEST_URI'];
-	} elseif ($_SERVER['REMOTE_ADDR'] == '127.0.0.1') {
-		$link_cheque = 'http://' . $_SERVER['SERVER_NAME'] . $_SERVER['REQUEST_URI'];
-	}
+	// Ссылка на чек для занесения в базу данных.
+	$link_cheque = $url_prefix . $_SERVER['REQUEST_URI'];
 	
 	// Вывод информации из базы данных.
-	$output = _db_query_output($connect, "SELECT * FROM `transaction` WHERE `order_number` = '$order_number' AND `password` = '$password'");
+	$output = _db_query_output($connect, "SELECT * FROM $table_name WHERE `order_number` = '$order_number' AND `password` = '$password'");
 	?>
 
 <p>

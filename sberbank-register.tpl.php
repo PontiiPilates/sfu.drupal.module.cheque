@@ -28,7 +28,7 @@
             <select name="service" class="form-select" id="service" required>
 
                 <?php
-                    $services = _db_query_output_all($connect, "SELECT DISTINCT `service` FROM `transaction`");
+                    $services = _db_query_output_all($connect, "SELECT DISTINCT `service` FROM $table_name");
                     $options = array();
                     foreach ($services as $v) {
                         foreach ($v as $mv) {
@@ -70,16 +70,16 @@ $date_start = strtotime($_POST['date_start']);
 $date_end = strtotime($_POST['date_end']);
 
 if (!$data_payer && !$contract_number) {
-    $output = _db_query_output_all($connect, "SELECT * FROM `transaction` WHERE `order_number` BETWEEN '$date_start' AND '$date_end' AND `service` = '$service'");
+    $output = _db_query_output_all($connect, "SELECT * FROM $table_name WHERE `order_number` BETWEEN '$date_start' AND '$date_end' AND `service` = '$service'");
 }
 if ($data_payer && !$contract_number) {
-    $output = _db_query_output_all($connect, "SELECT * FROM `transaction` WHERE `order_number` BETWEEN '$date_start' AND '$date_end' AND `service` = '$service' AND `payer` LIKE '%$data_payer%'");
+    $output = _db_query_output_all($connect, "SELECT * FROM $table_name WHERE `order_number` BETWEEN '$date_start' AND '$date_end' AND `service` = '$service' AND `payer` LIKE '%$data_payer%'");
 }
 if (!$data_payer && $contract_number) {
-    $output = _db_query_output_all($connect, "SELECT * FROM `transaction` WHERE `order_number` BETWEEN '$date_start' AND '$date_end' AND `service` = '$service' AND `dogovor` LIKE '%$contract_number%'");
+    $output = _db_query_output_all($connect, "SELECT * FROM $table_name WHERE `order_number` BETWEEN '$date_start' AND '$date_end' AND `service` = '$service' AND `dogovor` LIKE '%$contract_number%'");
 }
 if ($data_payer && $contract_number) {
-    $output = _db_query_output_all($connect, "SELECT * FROM `transaction` WHERE `order_number` BETWEEN '$date_start' AND '$date_end' AND `service` = '$service' AND `dogovor` LIKE '%$contract_number%' AND `payer` LIKE '%$data_payer%'");
+    $output = _db_query_output_all($connect, "SELECT * FROM $table_name WHERE `order_number` BETWEEN '$date_start' AND '$date_end' AND `service` = '$service' AND `dogovor` LIKE '%$contract_number%' AND `payer` LIKE '%$data_payer%'");
 }
 ?>
 
@@ -140,22 +140,3 @@ if ($data_payer && $contract_number) {
     </tbody>
 
 </table>
-
-
-
-
-
-
-<?php
-    // ! Было полезно:
-    // ?выбор уникальных значений колонки
-    // "SELECT DISTINCT `service` FROM `transaction`"
-    // ?осуществляет поиск в диапазоне
-    // "SELECT * FROM transaction WHERE order_number BETWEEN 1594022000 AND 1594022080"
-    // ?осуществляет поиск по вхождению подстроки
-    // "SELECT * FROM transaction WHERE payer LIKE '%Тес%'"
-    // ?возвращает дату в формате метки времени
-    // strtotime()
-    // ?возвращает все найденные записи в виде ассоциативного массива
-    // mysqli_fetch_all($res, MYSQLI_ASSOC)
-?>

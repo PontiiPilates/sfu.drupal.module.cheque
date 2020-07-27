@@ -62,71 +62,72 @@ function registry_output(){
 	return $output;
 }
 
-function sberbank_register_form() {
-	// Подключение файла с доступами.
-	// require('access.php');
 
-	// $service = _db_query_output($connect, "SELECT DISTINCT `service` FROM `transaction`")
+// function sberbank_register_form() {
+// 	// Подключение файла с доступами.
+// 	// require('access.php');
+
+// 	// $service = _db_query_output($connect, "SELECT DISTINCT `service` FROM `transaction`")
 
 	
-	// Запрос для выборки по ФИО плательщика.
-	// "SELECT * FROM transaction WHERE payer LIKE '%Тес%'";
+// 	// Запрос для выборки по ФИО плательщика.
+// 	// "SELECT * FROM transaction WHERE payer LIKE '%Тес%'";
 
-	// Запрос для поиска по номеру договора
-	// "SELECT * FROM transaction WHERE dogovor = '123'";
+// 	// Запрос для поиска по номеру договора
+// 	// "SELECT * FROM transaction WHERE dogovor = '123'";
 
-	// Запрос для поиска по диапазону дат
-	// strtotime()
-	// "SELECT * FROM transaction WHERE order_number BETWEEN 1594022000 AND 1594022080";
+// 	// Запрос для поиска по диапазону дат
+// 	// strtotime()
+// 	// "SELECT * FROM transaction WHERE order_number BETWEEN 1594022000 AND 1594022080";
 
-	// Запрос для аггрегации услуг оплаты.
-	// "SELECT DISTINCT `service` FROM `transaction`";
-	// print_r($_POST);
+// 	// Запрос для аггрегации услуг оплаты.
+// 	// "SELECT DISTINCT `service` FROM `transaction`";
+// 	// print_r($_POST);
 
 
-	$services = _db_query_output_all($connect, "SELECT DISTINCT `service` FROM `transaction`");
-	$options = array();
-	foreach ($services as $v){
-		foreach ($v as $mv) {
-			$options[] = $mv;
-		}
-	}
+// 	$services = _db_query_output_all($connect, "SELECT DISTINCT `service` FROM $table_name");
+// 	$options = array();
+// 	foreach ($services as $v){
+// 		foreach ($v as $mv) {
+// 			$options[] = $mv;
+// 		}
+// 	}
 	
-	// print'<pre>';
-	// print_r($_POST);
-	// print'</pre>';
+// 	// print'<pre>';
+// 	// print_r($_POST);
+// 	// print'</pre>';
 
-	$form = array();
-	$form['#method'] = 'POST';
-	$form['#action'] = url('http://hg.pay/sberbank-register');
-	$form['data_payer'] = array(
-		'#title' => 'Поиск по ФИО плательщика',
-		'#type' => 'textfield',
-	);
-	$form['date_start'] = array(
-		'#title' => 'Поиск по диапазону дат, от',
-		'#type' => 'date',
-	);
-	$form['date_end'] = array(
-		'#title' => 'Поиск по диапазону дат, до',
-		'#type' => 'date',
-	);
-	$form['contract_number'] = array(
-		'#title' => 'Поиск по номеру договора',
-		'#type' => 'textfield',
-	);
-	$form['service'] = array(
-		'#title' => 'Поиск по номеру договора',
-		'#type' => 'select',
-		'#options' => $options,
-	);
-	$form['send_form_data'] = array(
-		'#type' => 'submit',
-		'#value' => t('Получить чек'),
-	);
-	return $form;
+// 	$form = array();
+// 	$form['#method'] = 'POST';
+// 	$form['#action'] = url('http://hg.pay/sberbank-register');
+// 	$form['data_payer'] = array(
+// 		'#title' => 'Поиск по ФИО плательщика',
+// 		'#type' => 'textfield',
+// 	);
+// 	$form['date_start'] = array(
+// 		'#title' => 'Поиск по диапазону дат, от',
+// 		'#type' => 'date',
+// 	);
+// 	$form['date_end'] = array(
+// 		'#title' => 'Поиск по диапазону дат, до',
+// 		'#type' => 'date',
+// 	);
+// 	$form['contract_number'] = array(
+// 		'#title' => 'Поиск по номеру договора',
+// 		'#type' => 'textfield',
+// 	);
+// 	$form['service'] = array(
+// 		'#title' => 'Поиск по номеру договора',
+// 		'#type' => 'select',
+// 		'#options' => $options,
+// 	);
+// 	$form['send_form_data'] = array(
+// 		'#type' => 'submit',
+// 		'#value' => t('Получить чек'),
+// 	);
+// 	return $form;
 
-}
+// }
 
 function render_sberbank_register(){
 	require('access.php');
@@ -135,7 +136,7 @@ function render_sberbank_register(){
 
 	$dog = $_POST['contract_number'];
 
-	$asd = _db_query_output($connect, "SELECT * FROM transaction WHERE dogovor = '$dog'");
+	$asd = _db_query_output($connect, "SELECT * FROM $table_name WHERE dogovor = '$dog'");
 	// print_r($asd['dogovor']);
 
 
@@ -156,8 +157,7 @@ function get_check()
 {
 	$form = array();
 	$form['#method'] = 'GET';
-	// TODO: сделать урл подходящим как для локального сервера, так и для боевого.
-	$form['#action'] = url('http://hg.pay/transaction-success');
+	$form['#action'] = url("$url/transaction-success");
 	$form['transaction_orderId'] = array(
 		'#title' => 'Введите orderId вашей транзакции',
 		'#type' => 'textfield',
@@ -229,33 +229,35 @@ function transaction_success()
 	$org            = $fields['Организация'];
 	$order_number   = $get_transaction_info['orderNumber'];
 	$order_status   = $get_transaction_info['orderStatus'];
+	$error_code 	= $get_transaction_info['errorCode'];
 	$service        = $get_transaction_info['orderDescription'];
 	$cost           = $get_transaction_info['paymentAmountInfo']['approvedAmount'] / 100;
-	$password 		= _password_generate();
 	$transfer_data	= array();
+	$password 		= _password_generate();
+	$link_cheque	= "$url_prefix/sberbank-cheque?orderNumber=$order_number&password=$password";
+
+	// Проверка корректности orderId
+	if ($error_code > 0){
+		exit('Введите корректный orderId');
+	}
 
 	// Преобразование статуса транзакции для занесения в базу данных.
 	if ($order_status == 2) {
 		$order_status = 'оплачено';
 	};
-	// Преобразования ссылки на чек для занесения в базу данных.
-	if ($_SERVER['REMOTE_ADDR'] == '10.0.73.91') {
-		$link_cheque = "https://pay.sfu-kras.ru/sberbank-cheque?orderNumber=$order_number&password=$password";
-	} elseif ($_SERVER['REMOTE_ADDR'] == '127.0.0.1') {
-		$link_cheque = "http://hg.pay/sberbank-cheque?orderNumber=$order_number&password=$password";
-	}
-
+	
+	
 	// Поиск транзакции в базе по orderId.
-	$check__transaction_in_db = _db_query_check($connect, "SELECT * FROM `transaction` WHERE `order_id` = '$order_id'");
+	$check__transaction_in_db = _db_query_check($connect, "SELECT * FROM $table_name WHERE `order_id` = '$order_id'");
 	if ($check__transaction_in_db) {
 		$transfer_data['transaction_in_db'] = TRUE;
 		$transfer_data['transaction_in_db__message'] = 'Транзакция находится в базе данных';
 	} else {
 		$transfer_data['transaction_in_db'] = FALSE;
 		$transfer_data['transaction_in_db__message'] = 'Транзакци нет в базе данных';
-
+		
 		// Добавление записи в базу данных.
-		$check__adding_transaction = _db_query_add($connect, "INSERT INTO `transaction` VALUES (NULL, '$description', '$libnumber', '$personal', '$package', '$service', '$surname', '$address', '$dogovor', '$hostel', '$status', '$payer', '$phone', '$event', '$email', '$cost', '$room', '$url', '$fio', '$org', '$order_id', '$password', '$order_number', '$order_status', CURRENT_TIMESTAMP, 'unsend', '$link_cheque')");
+		$check__adding_transaction = _db_query_add($connect, "INSERT INTO $table_name VALUES (NULL, '$description', '$libnumber', '$personal', '$package', '$service', '$surname', '$address', '$dogovor', '$hostel', '$status', '$payer', '$phone', '$event', '$email', '$cost', '$room', '$url', '$fio', '$org', '$order_id', '$password', '$order_number', '$order_status', CURRENT_TIMESTAMP, 'unsend', '$link_cheque')");
 		if ($check__adding_transaction) {
 			$transfer_data['adding_transaction'] = TRUE;
 			$transfer_data['adding_transaction__message'] = 'Транзакция добавлена в базу данных';
@@ -266,7 +268,7 @@ function transaction_success()
 	}
 
 	// Получение статуса отправки email.
-	$check__mail_state = _db_query_check($connect, "SELECT * FROM `transaction` WHERE `mail_send` = 'unsend' AND `order_id` = '$order_id'");
+	$check__mail_state = _db_query_check($connect, "SELECT * FROM $table_name WHERE `mail_send` = 'unsend' AND `order_id` = '$order_id'");
 	if ($check__mail_state) {
 		$transfer_data['mail_state'] = TRUE;
 		$transfer_data['mail_state__message'] = 'Email со ссылкой на чек об оплате еще не был отправлен';
@@ -279,7 +281,7 @@ function transaction_success()
 
 			// Занесение отметки об отправке сообщения на почту.
 			$datetime = time();
-			$check__mail_state_update = _db_query_update($connect, "UPDATE `transaction` SET `mail_send` = '$datetime' WHERE `order_id` = '$order_id'");
+			$check__mail_state_update = _db_query_update($connect, "UPDATE $table_name SET `mail_send` = '$datetime' WHERE `order_id` = '$order_id'");
 			if ($check__mail_state_update) {
 				$transfer_data['mail_state_update'] = TRUE;
 				$transfer_data['mail_state_update__message'] = 'Обновление статуса отправки email завершено';
@@ -296,7 +298,7 @@ function transaction_success()
 		$transfer_data['mail_state__message'] = 'Ссылка на чек об оплате была отправлена на указанный email';
 	}
 
-	$link_cheque = _db_query_output($connect, "SELECT `cheque_link` FROM `transaction` WHERE `order_id` = '$order_id'");
+	$link_cheque = _db_query_output($connect, "SELECT `cheque_link` FROM $table_name WHERE `order_id` = '$order_id'");
 	$link_cheque = $link_cheque['cheque_link'];
 	return header("Location: $link_cheque");
 }
@@ -345,7 +347,7 @@ function cheque_output()
 // 6 - авторизация отклонена.
 
 // ! Коды ошибок:
-// 0	Обработка запроса прошла без системных ошибок.
+// 0 - Обработка запроса прошла без системных ошибок.
 // 5 - Доступ запрещён.
 // 5 - Пользователь должен сменить свой пароль.
 // 5 - [orderId] не задан.
