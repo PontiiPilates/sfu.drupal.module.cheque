@@ -11,6 +11,7 @@
 	
 	// Вывод информации из базы данных.
 	$output = _db_query_output($connect, "SELECT * FROM $table_name WHERE `order_number` = '$order_number' AND `password` = '$password'");
+	$order_id = $output['order_id'];
 	?>
 
 <p>
@@ -63,8 +64,7 @@
 </p>
 
 <div>
-	<img src="http://chart.apis.google.com/chart?choe=UTF-8&chld=H&cht=qr&chs=200x200&chl=<?php print $link_cheque; ?>">
-
+	<img src='http://chart.apis.google.com/chart?choe=UTF-8&chld=H&cht=qr&chs=200x200&chl=<?php print "$url_prefix/transaction-success?orderId=$order_id"; ?>'>
 </div>
 
 <p>Ссылка на эту квитанцию: <a href="<?php print $link_cheque; ?>"><?php print $link_cheque; ?></a>

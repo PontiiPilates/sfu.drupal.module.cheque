@@ -29,7 +29,7 @@ $returnUrl         = 'https://pay.sfu-kras.ru/transaction-success';
 $failUrl           = 'https://pay.sfu-kras.ru/transaction-failure';
 
 // Имя таблицы базы данных для реестра
-$table_name = 'transaction';
+$table_name = 'transactions';
 
 // Боевой сервер
 $url_prefix = 'https://pay.sfu-kras.ru';
@@ -39,8 +39,9 @@ if ($_SERVER['REMOTE_ADDR'] == '127.0.0.1') {
 }
 
 // Подключение к базе данных на локальном сервере.
-$connect = mysqli_connect("localhost", "root", "", "db_pay");
 // $connect = mysqli_connect("localhost", "root", "", "db_pay");
+// Подключение к базе данных на боевом сервере.
+$connect = mysqli_connect("localhost", "pay", "ZmWTDLIn2R", "db_pay");
 
 // Установка кодировки.
 $connect->set_charset("utf8");
