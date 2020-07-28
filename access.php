@@ -95,10 +95,12 @@ function _db_query_output($connect, $query)
 function _db_query_output_all($connect, $query)
 {
     $res = mysqli_query($connect, $query);
-	$res = mysqli_fetch_all($res, MYSQLI_ASSOC);
-    return $res;
+    $list = array();
+    while($row = mysqli_fetch_assoc($res)) {
+        $list[] = $row;
+    }
+    return $list;
 }
-
 
 /**
  * Генерация слуяайного буквенно-цифрового набора.

@@ -40,26 +40,16 @@ function sfu_pay_sber_menu()
 		'title' => 'Получить чек по orderId транзакции',
 		'page callback' => 'render_get_check',
 		'access arguments' => array('access content'),
-		// 'access callback' => TRUE,
 		'type' => MENU_CALLBACK
 	);
+	// Страница регистра транзакций.
 	$items['sberbank-register'] = array(
 		'title' => 'Реестр транзакций через интернет-эквайринг от Сбербанка',
 		'page callback' => 'registry_output',
-		'access arguments' => array('access content'),
-		// 'access callback' => TRUE,
+		'access arguments' => array('view pays'),
 		'type' => MENU_CALLBACK
 	);
 	return $items;
-}
-
-function registry_output(){
-	// Вывод шаблоны страницы.
-	ob_start();
-	require('sberbank-register.tpl.php');
-	$output = ob_get_contents();
-	ob_end_clean();
-	return $output;
 }
 
 /**
@@ -67,7 +57,8 @@ function registry_output(){
  * Отправка на почту плательщика ссылки на чек.
  * Тестовые параметры: http://hg.pay/transaction-success?orderId=525606fb-cae8-70b7-a1be-05710211d19b&lang=ru
  */
-function transaction_success() {
+function transaction_success()
+{
 	// Подключение файла с доступами.
 	require('access.php');
 
@@ -79,7 +70,6 @@ function transaction_success() {
 		$order_id = $_GET['transaction_orderId'];
 	}
 
-	
 	// Запрос на получение статуса транзакции.
 	$get_transaction_info = "$order_status_do?userName=$api_name&password=$api_pass&orderId=$order_id";
 	// Отправка запроса.
@@ -93,7 +83,7 @@ function transaction_success() {
 	foreach ($get_fields as $key => $value) {
 		$fields[$value['name']] = $value['value'];
 	};
-	
+
 	// Подготовка значений для занесения в базу данных.
 	$description    = $fields['Описание'];
 	$libnumber      = $fields['Читательский билет'];
@@ -120,19 +110,16 @@ function transaction_success() {
 	$transfer_data	= array();
 	$password 		= _password_generate();
 	$link_cheque	= "$url_prefix/sberbank-cheque?orderNumber=$order_number&password=$password";
-	
-	
+
 	// Проверка корректности orderId
-	if ($error_code > 0){
+	if ($error_code > 0) {
 		exit('Введите корректный orderId');
 	}
-	
 	// Преобразование статуса транзакции для занесения в базу данных.
 	if ($order_status == 2) {
 		$order_status = 'оплачено';
 	};
-	
-	
+
 	// Поиск транзакции в базе по orderId.
 	$check__transaction_in_db = _db_query_check($connect, "SELECT * FROM $table_name WHERE `order_id` = '$order_id'");
 	if ($check__transaction_in_db) {
@@ -141,7 +128,7 @@ function transaction_success() {
 	} else {
 		$transfer_data['transaction_in_db'] = FALSE;
 		$transfer_data['transaction_in_db__message'] = 'Транзакци нет в базе данных';
-		
+
 		// Добавление записи в базу данных.
 		$check__adding_transaction = _db_query_add($connect, "INSERT INTO $table_name VALUES (NULL, '$description', '$libnumber', '$personal', '$package', '$service', '$surname', '$address', '$dogovor', '$hostel', '$status', '$payer', '$phone', '$event', '$email', '$cost', '$room', '$url', '$fio', '$org', '$order_id', '$password', '$order_number', '$order_status', CURRENT_TIMESTAMP, 'unsend', '$link_cheque')");
 		if ($check__adding_transaction) {
@@ -153,10 +140,10 @@ function transaction_success() {
 			die('Не удалось добавить транзакцию в базу данных. Сохраните содержимое адресной строки на текущей странице и сообщите о проблеме разработчикам: info@sfu-kras.ru, тел. 206-98-60');
 		}
 	}
-	
-	echo '<pre>';
-	print_r($transfer_data);
-	echo '</pre>';
+
+	// Получение ссылки на чек уже из базы.
+	$link_cheque = _db_query_output($connect, "SELECT `cheque_link` FROM $table_name WHERE `order_id` = '$order_id'");
+	$link_cheque = $link_cheque['cheque_link'];
 
 	// Получение статуса отправки email.
 	$check__mail_state = _db_query_check($connect, "SELECT * FROM $table_name WHERE `mail_send` = 'unsend' AND `order_id` = '$order_id'");
@@ -189,110 +176,32 @@ function transaction_success() {
 		$transfer_data['mail_state__message'] = 'Ссылка на чек об оплате была отправлена на указанный email';
 	}
 
-	$link_cheque = _db_query_output($connect, "SELECT `cheque_link` FROM $table_name WHERE `order_id` = '$order_id'");
-	$link_cheque = $link_cheque['cheque_link'];
 	return header("Location: $link_cheque");
 }
 
 /**
- * Implements hook_mail().
+ * Страница неудавшейся оплаты.
  */
-function sfu_pay_sber_mail($key, &$message, $params)
+function transaction_failure()
 {
-	switch ($key) {
-			// Ключ, добавленный при использовании функции drupal_mail()
-		case 'key_mail_sber':
-			$message['subject'] = t('Чек об оплате услуги на pay.sfu-kras.ru');
-			$message['body'][] = $params['body'];
-			break;
-	}
-}
+	$output = '
+	<p>Оплата может не пройти потому что:</p>
+	<ul>
+	<li>Введены неверные данные карты; </li>
+	<li>У карты закончился срок действия;</li>
+	<li>На карте недостаточно средств для списания;</li>
+	<li>Нельзя подтвердить операцию по карте одноразовым паролем из СМС;</li>
+	<li>Банк установил запрет на оплату в интернете;</li>
+	</ul>
 
-
-// function sberbank_register_form() {
-// 	// Подключение файла с доступами.
-// 	// require('access.php');
-
-// 	// $service = _db_query_output($connect, "SELECT DISTINCT `service` FROM `transaction`")
-
-	
-// 	// Запрос для выборки по ФИО плательщика.
-// 	// "SELECT * FROM transaction WHERE payer LIKE '%Тес%'";
-
-// 	// Запрос для поиска по номеру договора
-// 	// "SELECT * FROM transaction WHERE dogovor = '123'";
-
-// 	// Запрос для поиска по диапазону дат
-// 	// strtotime()
-// 	// "SELECT * FROM transaction WHERE order_number BETWEEN 1594022000 AND 1594022080";
-
-// 	// Запрос для аггрегации услуг оплаты.
-// 	// "SELECT DISTINCT `service` FROM `transaction`";
-// 	// print_r($_POST);
-
-
-// 	$services = _db_query_output_all($connect, "SELECT DISTINCT `service` FROM $table_name");
-// 	$options = array();
-// 	foreach ($services as $v){
-// 		foreach ($v as $mv) {
-// 			$options[] = $mv;
-// 		}
-// 	}
-	
-// 	// print'<pre>';
-// 	// print_r($_POST);
-// 	// print'</pre>';
-
-// 	$form = array();
-// 	$form['#method'] = 'POST';
-// 	$form['#action'] = url('http://hg.pay/sberbank-register');
-// 	$form['data_payer'] = array(
-// 		'#title' => 'Поиск по ФИО плательщика',
-// 		'#type' => 'textfield',
-// 	);
-// 	$form['date_start'] = array(
-// 		'#title' => 'Поиск по диапазону дат, от',
-// 		'#type' => 'date',
-// 	);
-// 	$form['date_end'] = array(
-// 		'#title' => 'Поиск по диапазону дат, до',
-// 		'#type' => 'date',
-// 	);
-// 	$form['contract_number'] = array(
-// 		'#title' => 'Поиск по номеру договора',
-// 		'#type' => 'textfield',
-// 	);
-// 	$form['service'] = array(
-// 		'#title' => 'Поиск по номеру договора',
-// 		'#type' => 'select',
-// 		'#options' => $options,
-// 	);
-// 	$form['send_form_data'] = array(
-// 		'#type' => 'submit',
-// 		'#value' => t('Получить чек'),
-// 	);
-// 	return $form;
-
-// }
-
-function render_sberbank_register(){
-	require_once('access.php');
-
-	// print_r($_POST['contract_number']);
-
-	$dog = $_POST['contract_number'];
-
-	$asd = _db_query_output($connect, "SELECT * FROM $table_name WHERE dogovor = '$dog'");
-	// print_r($asd['dogovor']);
-
-
-
-
-	$html = '';
-	$html .= drupal_get_form('sberbank_register_form');
-	$html .= "Вывод post: " . print $asd;
-
-	return $html;
+	<p><b>Если оплата не прошла:</b></p>
+	<ul>
+	<li>Повторите попытку через 20 минут; </li>
+	<li>Обратитесь в банк, выпустивший карту;</li>
+	<li>Попробуйте оплатить другой картой;</li>
+	</ul>
+	';
+	return $output;
 }
 
 /**
@@ -318,22 +227,6 @@ function get_check()
 	return $form;
 }
 
-function render_get_check() {
-	$out  = drupal_get_form('get_check');   
-  return $out;
-  }
-
-
-
-
-
-
-function transaction_failure()
-{
-	$output = '<p>Не удалось совершить оплату. Статус транзакции: <b>НЕ оплачено</b>.</p>';
-	return $output;
-}
-
 /**
  * Страница вывода чека об оплате.
  * Тестовые параметры: ?orderNumber=1594018660&password=ebqhx3z6ck
@@ -346,6 +239,45 @@ function cheque_output()
 	$output = ob_get_contents();
 	ob_end_clean();
 	return $output;
+}
+
+/**
+ * Рендер формы и вывод содержимого на страницу.
+ */
+function render_get_check()
+{
+	$output = '
+	<p>Если при оплате услуг вы использовали кнопку <strong>"Оплатить сервисом Сбербанка"</strong> и у вас нет чека, то здесь его можно получить.</br>
+	Для этого вам нужно запросить orderId в у сотрудников <a href="http://structure.sfu-kras.ru/node/538#staff">отдела</a> и ввести его в поле ниже.</p>
+	';
+	$output .= drupal_get_form('get_check');
+	return $output;
+}
+
+/**
+ * Страница реестра.
+ */
+function registry_output()
+{
+	ob_start();
+	require('sberbank-register.tpl.php');
+	$output = ob_get_contents();
+	ob_end_clean();
+	return $output;
+}
+
+/**
+ * Implements hook_mail().
+ */
+function sfu_pay_sber_mail($key, &$message, $params)
+{
+	switch ($key) {
+			// Ключ, добавленный при использовании функции drupal_mail()
+		case 'key_mail_sber':
+			$message['subject'] = t('Чек об оплате услуги СФУ');
+			$message['body'][] = $params['body'];
+			break;
+	}
 }
 
 // ! Коды orderStatus:
@@ -364,24 +296,3 @@ function cheque_output()
 // 5 - [orderId] не задан.
 // 6 - Незарегистрированный orderId.
 // 7 - Системная ошибка.
-
-// ! Новое в друпал:
-// drupal_add_js() - добавляет подключаемый js-файл.
-// drupal_get_path() - возвращает путь по типу и имени.
-
-// ! Новое в PHP:
-// str_shuffle() - Перемешивает символы в передаваемой строке случайным образом.
-
-// ! Полезные фрагменты кода:
-/*
-* $link = mysqli_connect("localhost", "root", "", "db_pay");
-* if (!$link) {
-*     echo "Ошибка: Невозможно установить соединение с MySQL." . PHP_EOL;
-*     echo "Код ошибки errno: " . mysqli_connect_errno() . PHP_EOL;
-*     echo "Текст ошибки error: " . mysqli_connect_error() . PHP_EOL;
-*     exit;
-* }
-* echo "Соединение с MySQL установлено!" . PHP_EOL;
-* echo "Информация о сервере: " . mysqli_get_host_info($link) . PHP_EOL;
-* mysqli_close($link);
-*/
